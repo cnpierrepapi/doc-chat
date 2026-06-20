@@ -51,7 +51,12 @@ export async function POST(req: NextRequest) {
 
             const firecrawl = new FirecrawlApp({ apiKey: process.env.FIRECRAWL_API_KEY! })
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result: any = await firecrawl.scrapeUrl(body.url, { formats: ['markdown'] })
+            const result: any = await Promise.race([
+              firecrawl.scrapeUrl(body.url, { formats: ['markdown'] }),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('URL fetch timed out — site may be blocking scrapers or too slow')), 25000)
+              ),
+            ])
             if (!result?.markdown) throw new Error('Could not fetch URL content')
             rawText = (result.markdown as string).slice(0, 60000)
           } else if (body.text) {
