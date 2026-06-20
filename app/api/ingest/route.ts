@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server'
 import { extractText } from 'unpdf'
-import FirecrawlApp from '@mendable/firecrawl-js'
 import { chunkText } from '@/lib/chunker'
 import { embedTexts } from '@/lib/embed'
 import { createDocument, saveChunks } from '@/lib/store'
@@ -43,22 +42,47 @@ export async function POST(req: NextRequest) {
           const body = await req.json()
 
           if (body.url) {
-            // URL scrape
+            // URL scrape — native fetch (ported from warmlane/lib/seeding/website-fetcher.ts)
             sourceType = 'url'
             sourceUrl = body.url
             title = body.url.replace(/^https?:\/\//, '').split('/')[0]
             emit({ type: 'progress', message: 'Fetching URL…' })
 
-            const firecrawl = new FirecrawlApp({ apiKey: process.env.FIRECRAWL_API_KEY! })
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result: any = await Promise.race([
-              firecrawl.scrapeUrl(body.url, { formats: ['markdown'] }),
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('URL fetch timed out — site may be blocking scrapers or responding too slowly')), 15000)
-              ),
-            ])
-            if (!result?.markdown) throw new Error('Could not fetch URL content')
-            rawText = (result.markdown as string).slice(0, 60000)
+            const fullUrl = (body.url as string).startsWith('http') ? body.url : `https://${body.url}`
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), 15000)
+
+            let fetchRes: Response
+            try {
+              fetchRes = await fetch(fullUrl, {
+                signal: controller.signal,
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (compatible; DocChat/1.0; +https://doc-chat-beige-beta.vercel.app)',
+                  Accept: 'text/html',
+                },
+                redirect: 'follow',
+              })
+            } finally {
+              clearTimeout(timer)
+            }
+
+            if (!fetchRes.ok) {
+              if (fetchRes.status === 403 || fetchRes.status === 401)
+                throw new Error('Site is blocking automated access (403/401)')
+              throw new Error(`Could not fetch URL: HTTP ${fetchRes.status}`)
+            }
+
+            const html = await fetchRes.text()
+            rawText = html
+              .replace(/<script[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[\s\S]*?<\/style>/gi, '')
+              .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+              .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/&[a-z]+;/gi, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 60000)
           } else if (body.text) {
             // Plain text paste
             sourceType = 'text'
