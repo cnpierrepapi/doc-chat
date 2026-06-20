@@ -74,6 +74,10 @@ ${context}`
   })
 
   return new Response(stream, {
-    headers: { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache' },
+    headers: {
+      'Content-Type': 'application/x-ndjson',
+      'Cache-Control': 'no-cache',
+      'X-Accel-Buffering': 'no',
+    },
   })
 }

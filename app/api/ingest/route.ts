@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
             const result: any = await Promise.race([
               firecrawl.scrapeUrl(body.url, { formats: ['markdown'] }),
               new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('URL fetch timed out — site may be blocking scrapers or too slow')), 25000)
+                setTimeout(() => reject(new Error('URL fetch timed out — site may be blocking scrapers or responding too slowly')), 15000)
               ),
             ])
             if (!result?.markdown) throw new Error('Could not fetch URL content')
@@ -104,6 +104,10 @@ export async function POST(req: NextRequest) {
   })
 
   return new Response(stream, {
-    headers: { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache' },
+    headers: {
+      'Content-Type': 'application/x-ndjson',
+      'Cache-Control': 'no-cache',
+      'X-Accel-Buffering': 'no',
+    },
   })
 }
